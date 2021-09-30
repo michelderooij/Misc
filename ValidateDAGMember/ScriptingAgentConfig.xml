@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Configuration version="1.0">
+<!--
+	Scripting Agent to block adding Exchange 2013/2016 Mailbox servers to
+	Database Availability Group consisting of Exchange member servers running a
+    different major version of Exchange.
+
+    Version 1.0, October 13th, 2015.
+
+	Michel de Rooij
+	michel@eightwone.com
+	http://eightwone.com
+	
+	THIS CODE IS MADE AVAILABLE AS IS, WITHOUT WARRANTY OF ANY KIND. THE ENTIRE 
+	RISK OF THE USE OR THE RESULTS FROM THE USE OF THIS CODE REMAINS WITH THE USER.	
+-->
+<Feature Name="DAGMemberVersionCheck" Cmdlets="Add-DatabaseAvailabilityGroupServer">
+    <ApiCall Name="Validate">
+    $SA_DAGIdentity= [string]($provisioningHandler.UserSpecifiedParameters['Identity'])
+	$SA_MBXIdentity= [string]($provisioningHandler.UserSpecifiedParameters['MailboxServer'])
+	$SA_DAG= Get-DatabaseAvailabilityGroup -Identity $SA_DAGIdentity -ErrorAction SilentlyContinue
+	$SA_MailboxServer= Get-MailboxServer -Identity $SA_MBXIdentity -ErrorAction SilentlyContinue
+    # Pre-flight checks already performed by 
+	If( ($SA_DAG.Servers).Count -ge 1) {
+		# Get a server from the DAG, and compare its version with ours
+		$SA_DAGServer= Get-MailboxServer -Identity ( ($SA_DAG).Servers | Select -First 1)
+		$SA_DAGServer > \\ex1\c$\tools\output.log
+		If( $SA_DAGServer.AdminDisplayVersion -match 'Version ([\d.]+) \(Build ([\d.]+)') {
+    		$SA_DAGServerVersion= $matches[1]
+        }
+		If( $SA_MailboxServer.AdminDisplayVersion -match 'Version ([\d.]+) \(Build ([\d.]+)') {
+    		$SA_MBXServerVersion= $matches[1]
+        }
+        If( $SA_DAGServerVersion -and $SA_MBXServerVersion) {
+    		If( $SA_MBXServerVersion -ne $SA_DAGServerVersion) {
+	    		New-Object -type Microsoft.Exchange.Data.ProvisioningValidationError -argumentlist ("Trying to add Mailbox Server version $SA_MBXServerVersion to Database Availability Group with Mailbox servers running version $SA_MBXServerVersion", [Microsoft.Exchange.Data.ExchangeErrorCategory]::Client )
+		    	return $null	
+            }
+        } 
+        Else {
+	    		New-Object -type Microsoft.Exchange.Data.ProvisioningValidationError -argumentlist ("Couldn't read Exchange or DAG Members version information", [Microsoft.Exchange.Data.ExchangeErrorCategory]::Client )
+		    	return $null	
+		}
+	}
+	Else {
+		# No Servers specified yet, life is good.
+	}
+    </ApiCall>
+  </Feature>
+</Configuration>
